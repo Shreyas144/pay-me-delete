@@ -12,15 +12,24 @@ export default function DeleteWebsite() {
   const [timer, setTimer] = useState(0);
   const [progress, setProgress] = useState(0);
   const [donated, setDonated] = useState(0);
+  const [customAmount, setCustomAmount] = useState(""); // Custom donation input
 
-  // Fetch current time from API and update countdown
+  // Fetch current time and update countdown
   useEffect(() => {
     const fetchTime = async () => {
       try {
         const response = await fetch("https://worldtimeapi.org/api/timezone/Etc/UTC");
         const data = await response.json();
         const currentTime = new Date(data.utc_datetime).getTime();
-        const timeLeft = Math.max((deadline - currentTime) / 1000, 0);
+        let timeLeft = Math.max((deadline - currentTime) / 1000, 0);
+
+        if (timeLeft <= 0) {
+          timeLeft = 60; // Reset countdown
+          setPrice((prev) => Math.ceil(prev * increaseRate));
+          setDonated(0);
+          setProgress(0);
+        }
+
         setTimer(Math.floor(timeLeft));
       } catch (error) {
         console.error("Error fetching time:", error);
@@ -30,22 +39,21 @@ export default function DeleteWebsite() {
     fetchTime();
     const interval = setInterval(fetchTime, 1000);
     return () => clearInterval(interval);
-  }, [deadline]); // ✅ Added `deadline` as a dependency
+  }, [deadline]);
 
-  // Reset price and donations when timer reaches zero
-  useEffect(() => {
-    if (timer <= 0) {
-      setPrice((prev) => Math.ceil(prev * increaseRate));
-      setProgress(0);
-      setDonated(0);
-    }
-  }, [timer]);
-
-  // Handle donations
-  const handleDonate = () => {
-    const donation = 10;
-    setDonated((prev) => prev + donation);
-    setProgress(((donated + donation) / price) * 100);
+  // Handle donation (Fixed $2 or Custom)
+  const handleDonate = (amount: number) => {
+    if (amount <= 0) return;
+    
+    setDonated((prev) => prev + amount);
+    setProgress(((donated + amount) / price) * 100);
+    
+    // Optional: Send donation data to backend (for security)
+    fetch("/api/donate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ amount }),
+    });
   };
 
   return (
@@ -54,13 +62,38 @@ export default function DeleteWebsite() {
         <h1 className="text-3xl font-bold mb-4">Pay Me to Delete This Website</h1>
         <p className="text-lg mb-2">Current Price: <span className="font-bold">${price}</span></p>
         <p className="text-sm text-gray-400 mb-4">Time Left: {timer}s</p>
+        
+        {/* Progress Bar */}
         <div className="w-full h-3 bg-gray-700 rounded-full overflow-hidden mb-4">
           <div className="h-full bg-red-500 transition-all" style={{ width: `${progress}%` }}></div>
         </div>
-        <p className="text-sm mb-4">${donated} of ${price} collected</p>
+
+        <p className="text-sm mb-4">
+          {donated >= price ? "🎉 Amount Reached! Website Will Be Deleted!" : `$${donated} of $${price} collected`}
+        </p>
+
+        {/* Fixed $2 Donation */}
         <motion.div whileTap={{ scale: 0.9 }}>
-          <button className="w-full bg-red-500 hover:bg-red-600 text-white py-2 px-4 rounded-lg" onClick={handleDonate}>
-            Donate $10 to Delete
+          <button className="w-full bg-red-500 hover:bg-red-600 text-white py-2 px-4 rounded-lg mb-2"
+            onClick={() => handleDonate(2)}>
+            Donate $2
+          </button>
+        </motion.div>
+
+        {/* Custom Donation */}
+        <input
+          type="number"
+          className="w-full p-2 bg-gray-700 text-white rounded-lg mb-2 text-center"
+          placeholder="Enter amount"
+          value={customAmount}
+          onChange={(e) => setCustomAmount(e.target.value)}
+        />
+        <motion.div whileTap={{ scale: 0.9 }}>
+          <button
+            className="w-full bg-green-500 hover:bg-green-600 text-white py-2 px-4 rounded-lg"
+            onClick={() => handleDonate(Number(customAmount))}
+          >
+            Donate Custom Amount
           </button>
         </motion.div>
       </div>
