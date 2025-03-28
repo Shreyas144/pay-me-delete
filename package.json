@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@shadcn/ui": "^0.0.4",
+    "@supabase/supabase-js": "^2.49.3",
     "framer-motion": "^12.6.2",
     "next": "15.2.4",
     "postcss": "^8.5.3",

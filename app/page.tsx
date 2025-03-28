@@ -2,17 +2,38 @@
 
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
+import { supabase } from "@/lib/supabase";
 
 export default function DeleteWebsite() {
-  const initialPrice = 100; // Initial price in USD
-  const increaseRate = 1.2; // Price increases by 20% if time runs out
-  const deadline = new Date("2025-04-01T00:00:00Z").getTime(); // Fixed deadline (UTC)
+  const initialPrice = 100;
+  const increaseRate = 1.2;
+  const deadline = new Date("2025-04-01T00:00:00Z").getTime();
 
   const [price, setPrice] = useState(initialPrice);
   const [timer, setTimer] = useState(0);
   const [progress, setProgress] = useState(0);
   const [donated, setDonated] = useState(0);
-  const [customAmount, setCustomAmount] = useState(""); // Custom donation input
+  const [customAmount, setCustomAmount] = useState("");
+
+  // Fetch total donations from Supabase
+  useEffect(() => {
+    const fetchDonations = async () => {
+      const { data, error } = await supabase
+        .from("donations")
+        .select("amount");
+
+      if (!error && data) {
+        const totalDonated = data.reduce((sum, entry) => sum + entry.amount, 0);
+        setDonated(totalDonated);
+        setProgress((totalDonated / price) * 100);
+      }
+    };
+
+    fetchDonations();
+    const interval = setInterval(fetchDonations, 5000); // Auto-refresh every 5 seconds
+
+    return () => clearInterval(interval);
+  }, [price]);
 
   // Fetch current time and update countdown
   useEffect(() => {
@@ -24,9 +45,8 @@ export default function DeleteWebsite() {
         let timeLeft = Math.max((deadline - currentTime) / 1000, 0);
 
         if (timeLeft <= 0) {
-          timeLeft = 60; // Reset countdown
+          timeLeft = 60;
           setPrice((prev) => Math.ceil(prev * increaseRate));
-          setDonated(0);
           setProgress(0);
         }
 
@@ -42,18 +62,20 @@ export default function DeleteWebsite() {
   }, [deadline]);
 
   // Handle donation (Fixed $2 or Custom)
-  const handleDonate = (amount: number) => {
+  const handleDonate = async (amount: number) => {
     if (amount <= 0) return;
-    
-    setDonated((prev) => prev + amount);
-    setProgress(((donated + amount) / price) * 100);
-    
-    // Optional: Send donation data to backend (for security)
-    fetch("/api/donate", {
+
+    // Send donation to backend
+    const response = await fetch("/api/donate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ amount }),
     });
+
+    if (response.ok) {
+      setDonated((prev) => prev + amount);
+      setProgress(((donated + amount) / price) * 100);
+    }
   };
 
   return (
@@ -62,7 +84,7 @@ export default function DeleteWebsite() {
         <h1 className="text-3xl font-bold mb-4">Pay Me to Delete This Website</h1>
         <p className="text-lg mb-2">Current Price: <span className="font-bold">${price}</span></p>
         <p className="text-sm text-gray-400 mb-4">Time Left: {timer}s</p>
-        
+
         {/* Progress Bar */}
         <div className="w-full h-3 bg-gray-700 rounded-full overflow-hidden mb-4">
           <div className="h-full bg-red-500 transition-all" style={{ width: `${progress}%` }}></div>
