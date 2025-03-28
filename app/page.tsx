@@ -5,76 +5,90 @@ import { motion } from "framer-motion";
 import { supabase } from "@/lib/supabase";
 
 export default function DeleteWebsite() {
-  const initialPrice = 100;
-  const increaseRate = 1.2;
-  const deadline = new Date("2025-04-01T00:00:00Z").getTime();
+  const initialPrice = 100; // Starting price in USD
+  const increaseRate = 1.2; // Price increases by 20% when timer runs out
+  const timeLimit = 60; // Countdown time in seconds
+
+  const deadline = new Date("2025-03-30T00:00:00Z").getTime(); // Set a fixed future deadline
 
   const [price, setPrice] = useState(initialPrice);
   const [timer, setTimer] = useState(0);
   const [progress, setProgress] = useState(0);
   const [donated, setDonated] = useState(0);
-  const [customAmount, setCustomAmount] = useState("");
-
-  // Fetch total donations from Supabase
+  
+  // Fetch the initial total donation from Supabase
   useEffect(() => {
     const fetchDonations = async () => {
-      const { data, error } = await supabase
-        .from("donations")
-        .select("amount");
+      const { data, error } = await supabase.from("donations").select("amount");
 
-      if (!error && data) {
-        const totalDonated = data.reduce((sum, entry) => sum + entry.amount, 0);
-        setDonated(totalDonated);
-        setProgress((totalDonated / price) * 100);
+      if (error) {
+        console.error("Error fetching donations:", error);
+      } else {
+        const total = data.reduce((sum, donation) => sum + donation.amount, 0);
+        setDonated(total);
       }
     };
 
     fetchDonations();
-    const interval = setInterval(fetchDonations, 5000); // Auto-refresh every 5 seconds
 
-    return () => clearInterval(interval);
-  }, [price]);
+    // Listen for real-time donation updates
+    const subscription = supabase
+      .channel("donations")
+      .on("postgres_changes", { event: "*", schema: "public", table: "donations" }, fetchDonations)
+      .subscribe();
 
-  // Fetch current time and update countdown
+    return () => {
+      supabase.removeChannel(subscription);
+    };
+  }, []);
+
+  // Calculate time remaining based on the fixed deadline
   useEffect(() => {
-    const fetchTime = async () => {
-      try {
-        const response = await fetch("https://worldtimeapi.org/api/timezone/Etc/UTC");
-        const data = await response.json();
-        const currentTime = new Date(data.utc_datetime).getTime();
-        let timeLeft = Math.max((deadline - currentTime) / 1000, 0);
+    const updateTimer = () => {
+      const now = new Date().getTime();
+      const remaining = Math.max(0, Math.floor((deadline - now) / 1000));
 
-        if (timeLeft <= 0) {
-          timeLeft = 60;
-          setPrice((prev) => Math.ceil(prev * increaseRate));
-          setProgress(0);
-        }
+      setTimer(remaining);
 
-        setTimer(Math.floor(timeLeft));
-      } catch (error) {
-        console.error("Error fetching time:", error);
+      if (remaining === 0) {
+        setPrice((prev) => Math.ceil(prev * increaseRate)); // Increase price
+        setProgress(0);
+        setDonated(0);
       }
     };
 
-    fetchTime();
-    const interval = setInterval(fetchTime, 1000);
+    updateTimer();
+    const interval = setInterval(updateTimer, 1000);
     return () => clearInterval(interval);
-  }, [deadline]);
+  }, []);
 
-  // Handle donation (Fixed $2 or Custom)
+  // Handle fixed donation
+  const handleFixedDonate = async () => {
+    await handleDonate(2); // Fixed donation of $2
+  };
+
+  // Handle custom donation
+  const handleCustomDonate = async () => {
+    const customAmount = parseFloat(prompt("Enter donation amount:") || "0");
+    if (customAmount > 0) {
+      await handleDonate(customAmount);
+    }
+  };
+
+  // Send donation to backend
   const handleDonate = async (amount: number) => {
-    if (amount <= 0) return;
-
-    // Send donation to backend
     const response = await fetch("/api/donate", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ amount }),
+      headers: { "Content-Type": "application/json" },
     });
 
+    const data = await response.json();
     if (response.ok) {
-      setDonated((prev) => prev + amount);
-      setProgress(((donated + amount) / price) * 100);
+      setDonated(data.totalDonated); // Update UI instantly
+      setProgress((data.totalDonated / price) * 100);
+    } else {
+      alert("Failed to donate: " + data.error);
     }
   };
 
@@ -84,40 +98,35 @@ export default function DeleteWebsite() {
         <h1 className="text-3xl font-bold mb-4">Pay Me to Delete This Website</h1>
         <p className="text-lg mb-2">Current Price: <span className="font-bold">${price}</span></p>
         <p className="text-sm text-gray-400 mb-4">Time Left: {timer}s</p>
-
-        {/* Progress Bar */}
         <div className="w-full h-3 bg-gray-700 rounded-full overflow-hidden mb-4">
-          <div className="h-full bg-red-500 transition-all" style={{ width: `${progress}%` }}></div>
+          <div
+            className="h-full bg-red-500 transition-all"
+            style={{ width: `${progress}%` }}
+          ></div>
         </div>
-
-        <p className="text-sm mb-4">
-          {donated >= price ? "🎉 Amount Reached! Website Will Be Deleted!" : `$${donated} of $${price} collected`}
-        </p>
-
-        {/* Fixed $2 Donation */}
-        <motion.div whileTap={{ scale: 0.9 }}>
-          <button className="w-full bg-red-500 hover:bg-red-600 text-white py-2 px-4 rounded-lg mb-2"
-            onClick={() => handleDonate(2)}>
-            Donate $2
-          </button>
-        </motion.div>
-
-        {/* Custom Donation */}
-        <input
-          type="number"
-          className="w-full p-2 bg-gray-700 text-white rounded-lg mb-2 text-center"
-          placeholder="Enter amount"
-          value={customAmount}
-          onChange={(e) => setCustomAmount(e.target.value)}
-        />
-        <motion.div whileTap={{ scale: 0.9 }}>
-          <button
-            className="w-full bg-green-500 hover:bg-green-600 text-white py-2 px-4 rounded-lg"
-            onClick={() => handleDonate(Number(customAmount))}
-          >
-            Donate Custom Amount
-          </button>
-        </motion.div>
+        <p className="text-sm mb-4">${donated} of ${price} collected</p>
+        {donated >= price ? (
+          <p className="text-xl font-bold text-green-500">Goal Reached!</p>
+        ) : (
+          <>
+            <motion.div whileTap={{ scale: 0.9 }}>
+              <button
+                className="w-full bg-red-500 hover:bg-red-600 text-white py-2 px-4 rounded-lg mb-2"
+                onClick={handleFixedDonate}
+              >
+                Donate $2
+              </button>
+            </motion.div>
+            <motion.div whileTap={{ scale: 0.9 }}>
+              <button
+                className="w-full bg-blue-500 hover:bg-blue-600 text-white py-2 px-4 rounded-lg"
+                onClick={handleCustomDonate}
+              >
+                Donate Custom Amount
+              </button>
+            </motion.div>
+          </>
+        )}
       </div>
     </div>
   );
