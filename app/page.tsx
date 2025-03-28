@@ -6,22 +6,20 @@ import { motion } from "framer-motion";
 export default function DeleteWebsite() {
   const initialPrice = 100; // Initial price in USD
   const increaseRate = 1.2; // Price increases by 20% if time runs out
-  const timeLimit = 60; // Countdown in seconds
-  const deadline = new Date("2025-04-01T00:00:00Z").getTime(); // Fixed future deadline
+  const deadline = new Date("2025-04-01T00:00:00Z").getTime(); // Fixed deadline (UTC)
 
   const [price, setPrice] = useState(initialPrice);
   const [timer, setTimer] = useState(0);
   const [progress, setProgress] = useState(0);
   const [donated, setDonated] = useState(0);
 
-  // Fetch current time from an API
+  // Fetch current time from API and update countdown
   useEffect(() => {
     const fetchTime = async () => {
       try {
-        const response = await fetch("http://worldtimeapi.org/api/timezone/Etc/UTC");
+        const response = await fetch("https://worldtimeapi.org/api/timezone/Etc/UTC");
         const data = await response.json();
         const currentTime = new Date(data.utc_datetime).getTime();
-
         const timeLeft = Math.max((deadline - currentTime) / 1000, 0);
         setTimer(Math.floor(timeLeft));
       } catch (error) {
@@ -32,8 +30,9 @@ export default function DeleteWebsite() {
     fetchTime();
     const interval = setInterval(fetchTime, 1000);
     return () => clearInterval(interval);
-  }, []);
+  }, [deadline]); // ✅ Added `deadline` as a dependency
 
+  // Reset price and donations when timer reaches zero
   useEffect(() => {
     if (timer <= 0) {
       setPrice((prev) => Math.ceil(prev * increaseRate));
@@ -42,6 +41,7 @@ export default function DeleteWebsite() {
     }
   }, [timer]);
 
+  // Handle donations
   const handleDonate = () => {
     const donation = 10;
     setDonated((prev) => prev + donation);
